@@ -1,13 +1,13 @@
 # graphFA
 
-This repo contains the source code for graph frequency domain factor analysis of multivariate graph signals.
+This repo contains the source code for graph frequency-domain factor analysis of multivariate graph signals.
 
 ## Description
 
 - Code
-  - `utils.R` is a code for functions used for graph frequency domain factor analysis.
+  - `utils.R` is a code for functions used for graph frequency-domain factor analysis.
   - `source.R` is a code for functions used for river network data analysis.
-  - `simulation_karate.R`, `simulation_ush.R` are codes for simulation study.
+  - `simulation_karate.R`, `simulation_ush.R`, and `irregular.R` are codes for simulation study.
   - `seoul_metro.R`, `river_network.R` are codes for real data analysis.
 
 
@@ -21,5 +21,5 @@ This repo contains the source code for graph frequency domain factor analysis of
   - R package from "Flow-directed PCA (Gallacher et al., 2017)". 
   
 ## Code overview
-We present a graph frequency domain factor model.
+We present a graph frequency-domain factor model.
 
