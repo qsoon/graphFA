@@ -195,14 +195,14 @@ bmat_func <- function(p,q,lambdalist){
 }
 
 # R realizations case
-R.list <- c(50,100,250,500)
+R.list <- c(10,20,30,40)
 p.list <- c(10,20,30,40)
-
 
 #########################################
 ## 2 factor simul on irregular01 graph ##
 #########################################
 
+sig=5
 rmse.array.irregular012.list <- list()
 for(ind in 1:100){
   print(paste("iteration:", ind))
@@ -260,13 +260,15 @@ for(ind in 1:100){
   }
   
   
-  WB <- windowbank.random(N=length(evalues.irregular01), M=max(R.list), V=evectors.irregular01, sigma=0.1, seed=ind+4)
+  WB <- windowbank.random(N=length(evalues.irregular01), M=max(R.list), V=evectors.irregular01, sigma=sig, seed=ind+4)
   for(i in 1:pmax){
     X.irregular01[i,,1] <- evectors.irregular01%*%diag(B.irregular01[i,1,])%*%Conj(t(evectors.irregular01))%*%f.irregular01[1,,1] +
       evectors.irregular01%*%diag(B.irregular01[i,2,])%*%Conj(t(evectors.irregular01))%*%f.irregular01[2,,1] +
       err.irregular01[i,,1]
     
+    X.irregular01[i,,1] <- X.irregular01[i,,1] - mean(X.irregular01[i,,1]) # centering
     X.irregular01[i,,2:Rmax] <- (t(WB)*as.vector(X.irregular01[i,,1]))[,2:Rmax]
+    X.irregular01[i,,2:Rmax] <- t(t(X.irregular01[i,,2:Rmax]) - colMeans(X.irregular01[i,,2:Rmax])) # centering
   }
   
   
@@ -306,11 +308,15 @@ for(ind in 1:100){
       p <- p.list[ind1]
       R <- R.list[ind2]
       
+      tau.hat <- matrix(NA, nrow=N.irregular01, ncol=R) 
       f.bar.irregular01 <- array(0, c(N.irregular01,R,k)) # n x R x k
       B.bar.irregular01 <- array(0, c(N.irregular01,p,k)) # n x p x k
       # f.check.irregular01 <- array(0, c(N.irregular01,R,k)) # n x R x k
       # Hk <- array(0, c(N.irregular01,q,k)) # n x q x k
       f.tilde.irregular01.re <- array(0, c(k,N.irregular01,R)) # k x n x R
+      f.ut.irregular01.re <- array(0, c(N.irregular01,R,k)) # n x R x k
+      B.ut.irregular01.re <- array(0,c(N.irregular01,p,k))
+      tmp_sum <- 0
       for(l in 1:N.irregular01){
         eigenres <- eigen(X.ut.irregular01[l,1:R,1:p] %*% Conj(t(X.ut.irregular01[l,1:R,1:p])))
         evectors <- eigenres$vectors
@@ -318,9 +324,14 @@ for(ind in 1:100){
         B.bar.irregular01[l,,] <- t(X.ut.irregular01[l,1:R,1:p]) %*% Conj(f.bar.irregular01[l,,]) / R
         
         f.tilde.irregular01.re[,l,] <- t(f.bar.irregular01[l,,]) 
+        f.ut.irregular01.re[l,,] <- t(f.tilde.irregular01.re[,l,])
+        B.ut.irregular01.re[l,,] <- B.bar.irregular01[l,,]
         # f.check.irregular01[l,,] <- X.ut.irregular01[l,1:R,1:p] %*% Conj(B.bar.irregular01[l,,]) / p
         # Hk[l,,] <- t( (t(f.bar.irregular01[l,,])%*%Conj(f.ut.irregular01[l,1:R,]) / R) %*% (Conj(t(B.ut.irregular01[l,,]))%*%B.ut.irregular01[l,,] / p) )
         # rmse.array.irregular01[l,ind1,ind2] <- norm((t(f.check.irregular01[l,,]) - t(Hk[l,,])%*%t(f.ut.irregular01[l,1:R,]))[,1], type="2") / 1
+        
+        tau.hat[l,] <- eigenres$values
+        tmp_sum <- tmp_sum + norm(X.ut.irregular01[l,1,1:p] - as.vector(B.ut.irregular01.re[l,,] %*% f.ut.irregular01.re[l,1,]), type="2")^2
       }
       
       f.irregular01.re <- array(0, c(k,N.irregular01,R)) # k x n x R
@@ -329,61 +340,78 @@ for(ind in 1:100){
       }
       
       
-      tmp5 <- c()
-      for(pp in 1:p){
-        tmp5 <- c(tmp5, X.irregular01[pp,,1] - evectors.irregular01 %*% diag(B.bar.irregular01[,pp,1]) %*% t(Conj(evectors.irregular01)) %*% f.irregular01.re[1,,1] -
-                    evectors.irregular01 %*% diag(B.bar.irregular01[,pp,2]) %*% t(Conj(evectors.irregular01)) %*% f.irregular01.re[2,,1])
-      }
-      rmse.array.irregular012[ind1, ind2] <- norm(tmp5, type="2")
+      # tmp5 <- c()
+      # for(pp in 1:p){
+      #   tmp5 <- c(tmp5, X.irregular01[pp,,1] - evectors.irregular01 %*% diag(B.bar.irregular01[,pp,1]) %*% t(Conj(evectors.irregular01)) %*% f.irregular01.re[1,,1] -
+      #               evectors.irregular01 %*% diag(B.bar.irregular01[,pp,2]) %*% t(Conj(evectors.irregular01)) %*% f.irregular01.re[2,,1])
+      # }
+      # rmse.array.irregular012[ind1, ind2] <- norm(tmp5, type="2")^2 / norm(X.irregular01[1:p,,1], type="F")^2
+      # rmse.array.irregular012[ind1, ind2] <- sum(colSums(tau.hat)[(k+1):R]) / sum(tau.hat)
+      tmp_sum <- tmp_sum / norm(X.irregular01[1:p,,1], type="F")^2
+      rmse.array.irregular012[ind1, ind2] <- tmp_sum
     }
   }
   
   
-  fa_result1 <- fa(t(X.irregular01[1:p.list[1],,1]), nfactors = k, rotate = "varimax", fm = "ml")
-  # fa.parallel(t(X.irregular01[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
-  # Print results
+  # fa_result1 <- fa(t(X.irregular01[1:p.list[1],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  # # fa.parallel(t(X.irregular01[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
+  # # Print results
+  # 
+  # fa_result2 <- fa(t(X.irregular01[1:p.list[2],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  # # fa.parallel(t(X.irregular01[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
+  # # Print results
+  # 
+  # fa_result3 <- fa(t(X.irregular01[1:p.list[3],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  # 
+  # fa_result4 <- fa(t(X.irregular01[1:p.list[4],,1]), nfactors = k, rotate = "varimax", fm = "ml")
   
-  fa_result2 <- fa(t(X.irregular01[1:p.list[2],,1]), nfactors = k, rotate = "varimax", fm = "ml")
-  # fa.parallel(t(X.irregular01[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
-  # Print results
+  fa_result1 <- factanal(t(X.irregular01[1:p.list[1],,1]), factors=2,rotation = "varimax", scores = "regression")
+  fa_result2 <- factanal(t(X.irregular01[1:p.list[2],,1]), factors=2,rotation = "varimax", scores = "regression")
+  fa_result3 <- factanal(t(X.irregular01[1:p.list[3],,1]), factors=2,rotation = "varimax", scores = "regression")
+  fa_result4 <- factanal(t(X.irregular01[1:p.list[4],,1]), factors=2,rotation = "varimax", scores = "regression")
   
-  fa_result3 <- fa(t(X.irregular01[1:p.list[3],,1]), nfactors = k, rotate = "varimax", fm = "ml")
-  
-  fa_result4 <- fa(t(X.irregular01[1:p.list[4],,1]), nfactors = k, rotate = "varimax", fm = "ml")
-  
+  # rmse.array.irregular012 <- cbind(rmse.array.irregular012,
+  #                                  c(norm(fa_result1$residual, type="F"),norm(fa_result2$residual, type="F"),norm(fa_result3$residual, type="F"),norm(fa_result4$residual, type="F")))
   rmse.array.irregular012 <- cbind(rmse.array.irregular012,
-                                   c(norm(fa_result1$residual, type="F"),norm(fa_result2$residual, type="F"),norm(fa_result3$residual, type="F"),norm(fa_result4$residual, type="F")))
+                                   c(norm(t(X.irregular01[1:p.list[1],,1]) - fa_result1$scores %*% t(fa_result1$loadings), "F")^2 / norm(X.irregular01[1:p.list[1],,1], type="F")^2,
+                                     norm(t(X.irregular01[1:p.list[2],,1]) - fa_result2$scores %*% t(fa_result2$loadings), "F")^2 / norm(X.irregular01[1:p.list[2],,1], type="F")^2,
+                                     norm(t(X.irregular01[1:p.list[3],,1]) - fa_result3$scores %*% t(fa_result3$loadings), "F")^2 / norm(X.irregular01[1:p.list[3],,1], type="F")^2,
+                                     norm(t(X.irregular01[1:p.list[4],,1]) - fa_result4$scores %*% t(fa_result4$loadings), "F")^2 / norm(X.irregular01[1:p.list[4],,1], type="F")^2))
+  
   rmse.array.irregular012.list[[ind]] <- rmse.array.irregular012
 }
 
-
-res1 <- round(apply(simplify2array(rmse.array.irregular012.list), c(1,2), mean),3)
+round(apply(simplify2array(rmse.array.irregular012.list), c(1,2), mean),3)
 round(apply(simplify2array(rmse.array.irregular012.list), c(1,2), sd),3)
 
-par(mar=c(5,5,4,2)+0.1, mfrow=c(1,2))
-plot(res1[1,1:4], type="l", ylim=c(0, max(res1)+0.1), xaxt="n", xlab="", ylab="reconstruction error", cex.lab=1.6, lwd=1.3, main="Two-factor model", cex.main=1.6)
-axis(1, at=c(1,2,3,4), labels=paste("M =", c(50,100,250,500)), cex.axis=1.4)
-points(res1[1,1:4], pch=2, cex=2)
-lines(rep(res1[1,5],4), lty=2, lwd=1.3)
 
-lines(res1[2,1:4], col="red", lwd=1.3)
-points(res1[2,1:4], pch=5, cex=2, col="red")
-lines(rep(res1[2,5],4), lty=2, col="red", lwd=1.3)
-
-lines(res1[3,1:4], col="blue", lwd=1.3)
-points(res1[3,1:4], pch=6, cex=2, col="blue")
-lines(rep(res1[3,5],4), lty=2, col="blue", lwd=1.3)
-
-lines(res1[4,1:4], col="chartreuse4", lwd=1.3)
-points(res1[4,1:4], pch=21, cex=2.5, col="chartreuse4")
-lines(rep(res1[4,5],4), lty=2, col="chartreuse4", lwd=1.3)
-
-legend("topright", 
-       legend=paste("p =", c(10,20,30,40)), 
-       col=c("black", "red", "blue", "chartreuse4"), 
-       lty=1, 
-       lwd=2, 
-       cex=1.2)
+# res1 <- round(apply(simplify2array(rmse.array.irregular012.list), c(1,2), mean),3)
+# round(apply(simplify2array(rmse.array.irregular012.list), c(1,2), sd),3)
+# 
+# par(mar=c(5,5,4,2)+0.1, mfrow=c(1,2))
+# plot(res1[1,1:4], type="l", ylim=c(0, max(res1)+0.1), xaxt="n", xlab="", ylab="reconstruction error", cex.lab=1.6, lwd=1.3, main="Two-factor model", cex.main=1.6)
+# axis(1, at=c(1,2,3,4), labels=paste("M =", c(50,100,250,500)), cex.axis=1.4)
+# points(res1[1,1:4], pch=2, cex=2)
+# lines(rep(res1[1,5],4), lty=2, lwd=1.3)
+# 
+# lines(res1[2,1:4], col="red", lwd=1.3)
+# points(res1[2,1:4], pch=5, cex=2, col="red")
+# lines(rep(res1[2,5],4), lty=2, col="red", lwd=1.3)
+# 
+# lines(res1[3,1:4], col="blue", lwd=1.3)
+# points(res1[3,1:4], pch=6, cex=2, col="blue")
+# lines(rep(res1[3,5],4), lty=2, col="blue", lwd=1.3)
+# 
+# lines(res1[4,1:4], col="chartreuse4", lwd=1.3)
+# points(res1[4,1:4], pch=21, cex=2.5, col="chartreuse4")
+# lines(rep(res1[4,5],4), lty=2, col="chartreuse4", lwd=1.3)
+# 
+# legend("topright", 
+#        legend=paste("p =", c(10,20,30,40)), 
+#        col=c("black", "red", "blue", "chartreuse4"), 
+#        lty=1, 
+#        lwd=2, 
+#        cex=1.2)
 
 
 
@@ -391,29 +419,45 @@ legend("topright",
 #########################################
 ## 3 factor simul on irregular02 graph ##
 #########################################
-
 rmse.array.irregular023.list <- list()
-for(ind in 1:100){
+for(ind in 1:1){
   print(paste("iteration:", ind))
   
   set.seed(ind)
-  # tmp.var <- rbind(cbind(diag(1,N.irregular02), diag(1/2,N.irregular02), diag(1/2,N.irregular02)), 
-  #                  cbind(diag(1/2,N.irregular02), diag(1,N.irregular02), diag(1/2,N.irregular02)),
-  #                  cbind(diag(1/2,N.irregular02), diag(1/2,N.irregular02), diag(1,N.irregular02)))
-  tmp.var <- rbind(cbind(diag(1,N.irregular02), diag(1/2,N.irregular02), diag(1/2,N.irregular02)), 
+  tmp.var <- rbind(cbind(diag(1,N.irregular02), diag(1/2,N.irregular02), diag(1/2,N.irregular02)),
                    cbind(diag(1/2,N.irregular02), diag(1,N.irregular02), diag(1/2,N.irregular02)),
                    cbind(diag(1/2,N.irregular02), diag(1/2,N.irregular02), diag(1,N.irregular02)))
+  # tmp.var <- rbind(cbind(diag(1,N.irregular02), diag(1/2,N.irregular02)), 
+  #                  cbind(diag(1/2,N.irregular02), diag(1,N.irregular02)))
   # tilde.white.inputs <- t(mvrnorm(n=max(R.list), mu=rep(0,2*N.irregular02), Sigma=tmp.var)) # (3*N.irregular02) x R 
   tilde.white.inputs <- mvrnorm(n=1, mu=rep(0,3*N.irregular02), Sigma=tmp.var) # (3*N.irregular02) x R 
   white.inputs0 <- evectors.irregular02 %*% tilde.white.inputs[1:N.irregular02] # N.irregular02 x R matrix
   white.inputs1 <- evectors.irregular02 %*% tilde.white.inputs[(N.irregular02+1):(2*N.irregular02)] # N.irregular02 x R matrix
   white.inputs2 <- evectors.irregular02 %*% tilde.white.inputs[(2*N.irregular02+1):(3*N.irregular02)] # N.karate x R matrix
   
-  
   f1.irregular02 <- H.Mexican.irregular02 %*% white.inputs0
   f2.irregular02 <- H.highpass.irregular02 %*% white.inputs1
   f3.irregular02 <- H.lowpass.irregular02 %*% white.inputs2
   
+  
+  # f1.irregular02 <- H.heat.irregular02 %*% white.inputs0
+  # f2.irregular02 <- H.Mexican.irregular02 %*% white.inputs1
+  # f3.irregular02 <- H.lowpass.irregular02 %*% white.inputs2
+  # f3.irregular02 <- H.highpass.irregular02 %*% white.inputs2
+  
+  # set.seed(10)
+  # white.inputs3 <- t(mvrnorm(n=max(R.list), mu=rep(0,N.irregular02), Sigma=diag(1,N.irregular02))) # N.irregular02 x R matrix
+  # # white.inputs3 <- white.inputs2
+  # err1.irregular02 <- H2.heat.irregular02 %*% white.inputs3
+  # err2.irregular02 <- H2.Mexican.irregular02 %*% white.inputs3
+  # err3.irregular02 <- H2.sin.exp.irregular02 %*% white.inputs3
+  # err4.irregular02 <- H2.highpass.irregular02 %*% white.inputs3
+  # err5.irregular02 <- H2.lowpass.irregular02 %*% white.inputs3
+  # err6.irregular02 <- white.inputs3
+  
+  
+  
+  # B.irregular02 <- bmat_func(p=6,q=1,lambdalist=evalues.irregular02) # p x q x n
   pmax <- max(p.list) ; q <- 3 ; Rmax <- max(R.list)
   set.seed(ind+1)
   # B.irregular02 <- array(runif(p*q*N.irregular02, 5,10), c(p,q,N.irregular02)) # p x q x n
@@ -434,13 +478,16 @@ for(ind in 1:100){
   }
   
   
-  WB <- windowbank.random(N=length(evalues.irregular02), M=max(R.list), V=evectors.irregular02, sigma=0.1, seed=ind+4)
+  WB <- windowbank.random(N=length(evalues.irregular02), M=max(R.list), V=evectors.irregular02, sigma=sig, seed=ind+4)
   for(i in 1:pmax){
     X.irregular02[i,,1] <- evectors.irregular02%*%diag(B.irregular02[i,1,])%*%Conj(t(evectors.irregular02))%*%f.irregular02[1,,1] +
       evectors.irregular02%*%diag(B.irregular02[i,2,])%*%Conj(t(evectors.irregular02))%*%f.irregular02[2,,1] +
+      evectors.irregular02%*%diag(B.irregular02[i,3,])%*%Conj(t(evectors.irregular02))%*%f.irregular02[3,,1] +
       err.irregular02[i,,1]
     
+    X.irregular02[i,,1] <- X.irregular02[i,,1] - mean(X.irregular02[i,,1]) # centering
     X.irregular02[i,,2:Rmax] <- (t(WB)*as.vector(X.irregular02[i,,1]))[,2:Rmax]
+    X.irregular02[i,,2:Rmax] <- t(t(X.irregular02[i,,2:Rmax]) - colMeans(X.irregular02[i,,2:Rmax])) # centering
   }
   
   
@@ -471,9 +518,8 @@ for(ind in 1:100){
     B.ut.irregular02[l,,] <- B.irregular02[,,l]
   }
   
-  
-  rmse.array.irregular023 <- array(0, c(length(p.list),length(R.list)))
-  dimnames(rmse.array.irregular023) <- list(paste("p=",p.list,sep=""), paste("R=",R.list,sep=""))
+  rmse.array.irregular022 <- array(0, c(length(p.list),length(R.list)))
+  dimnames(rmse.array.irregular022) <- list(paste("p=",p.list,sep=""), paste("R=",R.list,sep=""))
   k <- 3
   for(ind1 in 1:length(p.list)){
     for(ind2 in 1:length(R.list)){
@@ -481,11 +527,15 @@ for(ind in 1:100){
       p <- p.list[ind1]
       R <- R.list[ind2]
       
+      tau.hat <- matrix(NA, nrow=N.irregular02, ncol=R) 
       f.bar.irregular02 <- array(0, c(N.irregular02,R,k)) # n x R x k
       B.bar.irregular02 <- array(0, c(N.irregular02,p,k)) # n x p x k
       # f.check.irregular02 <- array(0, c(N.irregular02,R,k)) # n x R x k
       # Hk <- array(0, c(N.irregular02,q,k)) # n x q x k
       f.tilde.irregular02.re <- array(0, c(k,N.irregular02,R)) # k x n x R
+      f.ut.irregular02.re <- array(0, c(N.irregular02,R,k)) # n x R x k
+      B.ut.irregular02.re <- array(0,c(N.irregular02,p,k))
+      tmp_sum <- 0
       for(l in 1:N.irregular02){
         eigenres <- eigen(X.ut.irregular02[l,1:R,1:p] %*% Conj(t(X.ut.irregular02[l,1:R,1:p])))
         evectors <- eigenres$vectors
@@ -493,9 +543,14 @@ for(ind in 1:100){
         B.bar.irregular02[l,,] <- t(X.ut.irregular02[l,1:R,1:p]) %*% Conj(f.bar.irregular02[l,,]) / R
         
         f.tilde.irregular02.re[,l,] <- t(f.bar.irregular02[l,,]) 
+        f.ut.irregular02.re[l,,] <- t(f.tilde.irregular02.re[,l,])
+        B.ut.irregular02.re[l,,] <- B.bar.irregular02[l,,]
         # f.check.irregular02[l,,] <- X.ut.irregular02[l,1:R,1:p] %*% Conj(B.bar.irregular02[l,,]) / p
         # Hk[l,,] <- t( (t(f.bar.irregular02[l,,])%*%Conj(f.ut.irregular02[l,1:R,]) / R) %*% (Conj(t(B.ut.irregular02[l,,]))%*%B.ut.irregular02[l,,] / p) )
         # rmse.array.irregular02[l,ind1,ind2] <- norm((t(f.check.irregular02[l,,]) - t(Hk[l,,])%*%t(f.ut.irregular02[l,1:R,]))[,1], type="2") / 1
+        
+        tau.hat[l,] <- eigenres$values
+        tmp_sum <- tmp_sum + norm(X.ut.irregular02[l,1,1:p] - as.vector(B.ut.irregular02.re[l,,] %*% f.ut.irregular02.re[l,1,]), type="2")^2
       }
       
       f.irregular02.re <- array(0, c(k,N.irregular02,R)) # k x n x R
@@ -504,58 +559,77 @@ for(ind in 1:100){
       }
       
       
-      tmp5 <- c()
-      for(pp in 1:p){
-        tmp5 <- c(tmp5, X.irregular02[pp,,1] - evectors.irregular02 %*% diag(B.bar.irregular02[,pp,1]) %*% t(Conj(evectors.irregular02)) %*% f.irregular02.re[1,,1] -
-                    evectors.irregular02 %*% diag(B.bar.irregular02[,pp,2]) %*% t(Conj(evectors.irregular02)) %*% f.irregular02.re[2,,1] - 
-                    evectors.irregular02 %*% diag(B.bar.irregular02[,pp,3]) %*% t(Conj(evectors.irregular02)) %*% f.irregular02.re[3,,1])
-      }
-      rmse.array.irregular023[ind1, ind2] <- norm(tmp5, type="2")
+      # tmp5 <- c()
+      # for(pp in 1:p){
+      #   tmp5 <- c(tmp5, X.irregular02[pp,,1] - evectors.irregular02 %*% diag(B.bar.irregular02[,pp,1]) %*% t(Conj(evectors.irregular02)) %*% f.irregular02.re[1,,1] -
+      #               evectors.irregular02 %*% diag(B.bar.irregular02[,pp,2]) %*% t(Conj(evectors.irregular02)) %*% f.irregular02.re[2,,1])
+      # }
+      # rmse.array.irregular022[ind1, ind2] <- norm(tmp5, type="2")^2 / norm(X.irregular02[1:p,,1], type="F")^2
+      # rmse.array.irregular022[ind1, ind2] <- sum(colSums(tau.hat)[(k+1):R]) / sum(tau.hat)
+      # print(c(tmp_sum, norm(X.irregular02[1:p,,1], type="F")^2))
+      tmp_sum <- tmp_sum / norm(X.irregular02[1:p,,1], type="F")^2
+      rmse.array.irregular022[ind1, ind2] <- tmp_sum
     }
   }
   
-  fa_result1 <- fa(t(X.irregular02[1:p.list[1],,1]), nfactors = k, rotate = "varimax", fm = "ml")
-  # fa.parallel(t(X.irregular01[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
-  # Print results
   
-  fa_result2 <- fa(t(X.irregular02[1:p.list[2],,1]), nfactors = k, rotate = "varimax", fm = "ml")
-  # fa.parallel(t(X.irregular01[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
-  # Print results
+  # fa_result1 <- fa(t(X.irregular02[1:p.list[1],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  # # fa.parallel(t(X.irregular02[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
+  # # Print results
+  # 
+  # fa_result2 <- fa(t(X.irregular02[1:p.list[2],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  # # fa.parallel(t(X.irregular02[1:10,,1]), fa = "fa", n.iter = 100, show.legend = TRUE)
+  # # Print results
+  # 
+  # fa_result3 <- fa(t(X.irregular02[1:p.list[3],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  # 
+  # fa_result4 <- fa(t(X.irregular02[1:p.list[4],,1]), nfactors = k, rotate = "varimax", fm = "ml")
   
-  fa_result3 <- fa(t(X.irregular02[1:p.list[3],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  fa_result1 <- factanal(t(X.irregular02[1:p.list[1],,1]), factors=3,rotation = "varimax", scores = "regression")
+  fa_result2 <- factanal(t(X.irregular02[1:p.list[2],,1]), factors=3,rotation = "varimax", scores = "regression")
+  fa_result3 <- factanal(t(X.irregular02[1:p.list[3],,1]), factors=3,rotation = "varimax", scores = "regression")
+  fa_result4 <- factanal(t(X.irregular02[1:p.list[4],,1]), factors=3,rotation = "varimax", scores = "regression")
   
-  fa_result4 <- fa(t(X.irregular02[1:p.list[4],,1]), nfactors = k, rotate = "varimax", fm = "ml")
+  # rmse.array.irregular022 <- cbind(rmse.array.irregular022,
+  #                                  c(norm(fa_result1$residual, type="F"),norm(fa_result2$residual, type="F"),norm(fa_result3$residual, type="F"),norm(fa_result4$residual, type="F")))
+  rmse.array.irregular022 <- cbind(rmse.array.irregular022,
+                                   c(norm(t(X.irregular02[1:p.list[1],,1]) - fa_result1$scores %*% t(fa_result1$loadings), "F")^2 / norm(X.irregular02[1:p.list[1],,1], type="F")^2,
+                                     norm(t(X.irregular02[1:p.list[2],,1]) - fa_result2$scores %*% t(fa_result2$loadings), "F")^2 / norm(X.irregular02[1:p.list[2],,1], type="F")^2,
+                                     norm(t(X.irregular02[1:p.list[3],,1]) - fa_result3$scores %*% t(fa_result3$loadings), "F")^2 / norm(X.irregular02[1:p.list[3],,1], type="F")^2,
+                                     norm(t(X.irregular02[1:p.list[4],,1]) - fa_result4$scores %*% t(fa_result4$loadings), "F")^2 / norm(X.irregular02[1:p.list[4],,1], type="F")^2))
   
-  rmse.array.irregular023 <- cbind(rmse.array.irregular023,
-                                   c(norm(fa_result1$residual, type="F"),norm(fa_result2$residual, type="F"),norm(fa_result3$residual, type="F"),norm(fa_result4$residual, type="F")))
-  rmse.array.irregular023.list[[ind]] <- rmse.array.irregular023
+  rmse.array.irregular023.list[[ind]] <- rmse.array.irregular022
 }
 
-
-res2 <- round(apply(simplify2array(rmse.array.irregular023.list), c(1,2), mean),3)
+round(apply(simplify2array(rmse.array.irregular023.list), c(1,2), mean),3)
 round(apply(simplify2array(rmse.array.irregular023.list), c(1,2), sd),3)
 
 
-plot(res2[1,1:4], type="l", ylim=c(0, max(res2)+0.1), xaxt="n", xlab="", ylab="reconstruction error", cex.lab=1.6, lwd=1.3, main="Three-factor model", cex.main=1.6)
-axis(1, at=c(1,2,3,4), labels=paste("M =", c(50,100,250,500)), cex.axis=1.4)
-points(res2[1,1:4], pch=2, cex=2)
-lines(rep(res2[1,5],4), lty=2, lwd=1.3)
 
-lines(res2[2,1:4], col="red", lwd=1.3)
-points(res2[2,1:4], pch=5, cex=2, col="red")
-lines(rep(res2[2,5],4), lty=2, col="red", lwd=1.3)
-
-lines(res2[3,1:4], col="blue", lwd=1.3)
-points(res2[3,1:4], pch=6, cex=2, col="blue")
-lines(rep(res2[3,5],4), lty=2, col="blue", lwd=1.3)
-
-lines(res2[4,1:4], col="chartreuse4", lwd=1.3)
-points(res2[4,1:4], pch=21, cex=2.5, col="chartreuse4")
-lines(rep(res2[4,5],4), lty=2, col="chartreuse4", lwd=1.3)
-
-legend("topright", 
-       legend=paste("p =", c(10,20,30,40)), 
-       col=c("black", "red", "blue", "chartreuse4"), 
-       lty=1, 
-       lwd=2, 
-       cex=1.2)
+# res2 <- round(apply(simplify2array(rmse.array.irregular023.list), c(1,2), mean),3)
+# round(apply(simplify2array(rmse.array.irregular023.list), c(1,2), sd),3)
+# 
+# 
+# plot(res2[1,1:4], type="l", ylim=c(0, max(res2)+0.1), xaxt="n", xlab="", ylab="reconstruction error", cex.lab=1.6, lwd=1.3, main="Three-factor model", cex.main=1.6)
+# axis(1, at=c(1,2,3,4), labels=paste("M =", c(50,100,250,500)), cex.axis=1.4)
+# points(res2[1,1:4], pch=2, cex=2)
+# lines(rep(res2[1,5],4), lty=2, lwd=1.3)
+# 
+# lines(res2[2,1:4], col="red", lwd=1.3)
+# points(res2[2,1:4], pch=5, cex=2, col="red")
+# lines(rep(res2[2,5],4), lty=2, col="red", lwd=1.3)
+# 
+# lines(res2[3,1:4], col="blue", lwd=1.3)
+# points(res2[3,1:4], pch=6, cex=2, col="blue")
+# lines(rep(res2[3,5],4), lty=2, col="blue", lwd=1.3)
+# 
+# lines(res2[4,1:4], col="chartreuse4", lwd=1.3)
+# points(res2[4,1:4], pch=21, cex=2.5, col="chartreuse4")
+# lines(rep(res2[4,5],4), lty=2, col="chartreuse4", lwd=1.3)
+# 
+# legend("topright", 
+#        legend=paste("p =", c(10,20,30,40)), 
+#        col=c("black", "red", "blue", "chartreuse4"), 
+#        lty=1, 
+#        lwd=2, 
+#        cex=1.2)
